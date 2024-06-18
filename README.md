@@ -28,8 +28,8 @@ This project contains Terraform configurations to provision AWS infrastructure, 
 
 Run the commands below:
 
-# Reinitialize the backend without state migration
-terraform init -reconfigure
+# Initialize the backend
+terraform init
 
 # Validate the configuration
 terraform validate

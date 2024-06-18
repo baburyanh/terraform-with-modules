@@ -43,14 +43,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state_e
   }
 }
 
-# Apply private ACL (Optional, since it's the default setting)
-# resource "aws_s3_bucket_acl" "terraform_state_acl" {
-#  bucket = aws_s3_bucket.terraform_state.bucket
-#  acl    = "private"
-#}
-
-
-
 
 
 module "network" {
