@@ -3,6 +3,20 @@ provider "aws" {
   profile = var.aws_profile
 }
 
+
+# Create DynamoDB Table
+resource "aws_dynamodb_table" "terraform_state_lock_table" {
+  name         = "terraform-state-lock-table"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+}
+
+
 # Create S3 bucket for Terraform state
 resource "aws_s3_bucket" "terraform_state" {
   bucket = "week5-tfstate-bucket"
@@ -36,16 +50,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state_e
 #}
 
 
-resource "aws_dynamodb_table" "terraform_state_lock" {
-  name         = "terraform-state-lock-table"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
 
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-}
 
 
 module "network" {

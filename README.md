@@ -14,3 +14,28 @@ This project contains Terraform configurations to provision AWS infrastructure, 
   - `modules/security`: Module for security group resources.
   - `modules/compute`: Module for EC2 instance resources, Launch Templates, ASG.
   - `modules/load_balancer`: Module for load balancer resources.
+
+
+## Instractions
+
+- Go to the AWS Management Console,
+- Navigate to DynamoDB,
+- Create the table:
+    - Table name: terraform-state-lock-table
+    - Partition key: LockID (String)
+    - Click Create to create the table.
+
+
+Run the commands below:
+
+# or reinitialize the backend without state migration
+terraform init -reconfigure
+
+# Validate the configuration
+terraform validate
+
+# Generate an execution plan
+terraform plan
+
+# Apply the configuration
+terraform apply
