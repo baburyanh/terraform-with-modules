@@ -1,230 +1,104 @@
-# Define the AWS provider
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
 }
 
-# Create VPC
-resource "aws_vpc" "main" {
-  cidr_block = var.vpc_cidr_block
-  tags = {
-    Name = "terraform-vpc"
-  }
+# Create S3 bucket for Terraform state
+resource "aws_s3_bucket" "terraform_state" {
+  bucket = "week5-tfstate-bucket"
 }
 
-# Create public subnets
-resource "aws_subnet" "public_subnet1" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.public_subnet1_cidr_block
-  availability_zone = "eu-north-1a"
-}
+# Enable versioning
+resource "aws_s3_bucket_versioning" "terraform_state_versioning" {
+  bucket = aws_s3_bucket.terraform_state.bucket
 
-resource "aws_subnet" "public_subnet2" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.public_subnet2_cidr_block
-  availability_zone = "eu-north-1b"
-}
-
-# Create private subnets
-resource "aws_subnet" "private_subnet1" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet1_cidr_block
-  availability_zone = "eu-north-1a"
-}
-
-resource "aws_subnet" "private_subnet2" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet2_cidr_block
-  availability_zone = "eu-north-1b"
-}
-
-# Create internet gateway
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-
-  tags = {
-    Name = "terraform-igw"
-  }
-}
-
-# Attach internet gateway to public subnets
-resource "aws_route_table" "public_route_table1" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-}
-
-resource "aws_route_table_association" "public_subnet1_association" {
-  subnet_id      = aws_subnet.public_subnet1.id
-  route_table_id = aws_route_table.public_route_table1.id
-}
-
-resource "aws_route_table" "public_route_table2" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-
-  tags = {
-    Name = "terraform-route-table"
-  }
-}
-
-resource "aws_route_table_association" "public_subnet2_association" {
-  subnet_id      = aws_subnet.public_subnet2.id
-  route_table_id = aws_route_table.public_route_table2.id
-}
-
-# Create security groups
-resource "aws_security_group" "allow_ssh_http_tcp" {
-  vpc_id = aws_vpc.main.id
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Custom TCP"
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  versioning_configuration {
+    status = "Enabled"
   }
 }
 
 
-# Create a network interface
-resource "aws_network_interface" "example" {
-  subnet_id   = aws_subnet.private_subnet1.id
-  private_ips = ["10.0.3.100"] # Specify private IP addresses as needed
-}
+# Enable server-side encryption
+resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state_encryption" {
+  bucket = aws_s3_bucket.terraform_state.bucket
 
-
-# Create launch template
-data "template_file" "user_data" {
-  template = file(var.user_data_script_path)
-}
-
-resource "aws_launch_template" "my_template" {
-  name          = "my-launch-template"
-  image_id      = var.ami_id
-  instance_type = var.instance_type
-  user_data     = base64encode(data.template_file.user_data.rendered)
-
-  iam_instance_profile {
-    name = var.iam_instance_profile_name # IAM role name
-  }
-
-  metadata_options {
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-    http_endpoint               = "enabled"
-  }
-
-  key_name                             = var.key_name
-  instance_initiated_shutdown_behavior = "terminate"
-  ebs_optimized                        = true
-
-  network_interfaces {
-    security_groups             = [aws_security_group.allow_ssh_http_tcp.id]
-    associate_public_ip_address = var.associate_public_ip_address # Assign public IP addresses
-  }
-
-  block_device_mappings {
-    device_name = "/dev/sda1"
-
-    ebs {
-      volume_size           = var.volume_size # Size of the volume in GB
-      volume_type           = var.volume_type
-      delete_on_termination = true
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
     }
   }
-
 }
 
-# Create autoscaling group
-resource "aws_autoscaling_group" "my_asg" {
-  name = "my-asg"
-  launch_template {
-    id      = aws_launch_template.my_template.id
-    version = aws_launch_template.my_template.latest_version
+# Apply private ACL (Optional, since it's the default setting)
+# resource "aws_s3_bucket_acl" "terraform_state_acl" {
+#  bucket = aws_s3_bucket.terraform_state.bucket
+#  acl    = "private"
+#}
+
+
+resource "aws_dynamodb_table" "terraform_state_lock" {
+  name         = "terraform-state-lock-table"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
   }
-  min_size            = var.min_size
-  max_size            = var.max_size
-  desired_capacity    = var.desired_capacity
-  vpc_zone_identifier = [aws_subnet.public_subnet1.id, aws_subnet.public_subnet2.id]
-
-  tag {
-    key                 = "Name"
-    value               = "terraform-instance"
-    propagate_at_launch = true
-  }
-
-  target_group_arns = [aws_lb_target_group.my_target_group.arn]
-
 }
 
 
-# Create application load balancer
-resource "aws_lb" "my_alb" {
-  name               = "my-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.allow_ssh_http_tcp.id]
-  subnets            = [aws_subnet.public_subnet1.id, aws_subnet.public_subnet2.id]
+module "network" {
+  source = "./modules/network"
 
+  vpc_cidr_block             = var.vpc_cidr_block
+  public_subnet1_cidr_block  = var.public_subnet1_cidr_block
+  public_subnet2_cidr_block  = var.public_subnet2_cidr_block
+  private_subnet1_cidr_block = var.private_subnet1_cidr_block
+  private_subnet2_cidr_block = var.private_subnet2_cidr_block
+  availability_zone1         = "eu-north-1a"
+  availability_zone2         = "eu-north-1b"
+}
+
+module "security" {
+  source = "./modules/security"
+
+  vpc_id = module.network.vpc_id
+}
+
+module "compute" {
+  source = "./modules/compute"
+
+  ami_id                    = var.ami_id
+  instance_type             = var.instance_type
+  key_name                  = var.key_name
+  iam_instance_profile_name = var.iam_instance_profile_name
+  user_data_script_path     = var.user_data_script_path
+  volume_size               = var.volume_size
+  volume_type               = var.volume_type
+  associate_public_ip_address = var.associate_public_ip_address
+  min_size                  = var.min_size
+  max_size                  = var.max_size
+  desired_capacity          = var.desired_capacity
+  public_subnet_ids         = [module.network.public_subnet1_id, module.network.public_subnet2_id]
+  security_group_id         = module.security.security_group_id
+  target_group_arns         = [module.load_balancer.target_group_arn]
+}
+
+module "load_balancer" {
+  source = "./modules/load_balancer"
+
+  vpc_id                     = module.network.vpc_id
+  security_group_id          = module.security.security_group_id
+  public_subnet_ids          = [module.network.public_subnet1_id, module.network.public_subnet2_id]
   enable_deletion_protection = var.enable_deletion_protection
-}
-
-# Create target group
-resource "aws_lb_target_group" "my_target_group" {
-  name     = "my-target-group"
-  port     = 3000
-  protocol = var.health_check_protocol
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path                = var.health_check_path
-    port                = var.health_check_port
-    protocol            = var.health_check_protocol
-    healthy_threshold   = var.health_check_healthy_threshold
-    unhealthy_threshold = var.health_check_unhealthy_threshold
-    timeout             = var.health_check_timeout
-    interval            = var.health_check_interval
-  }
-}
-
-# Create ALB listener
-resource "aws_lb_listener" "lb_front_end" {
-  load_balancer_arn = aws_lb.my_alb.arn
-  port              = "80"
-  protocol          = "HTTP"
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.my_target_group.arn
-  }
+  target_group_port          = var.health_check_port
+  target_group_protocol      = var.health_check_protocol
+  health_check_path          = var.health_check_path
+  health_check_port          = var.health_check_port
+  health_check_protocol      = var.health_check_protocol
+  health_check_healthy_threshold   = var.health_check_healthy_threshold
+  health_check_unhealthy_threshold = var.health_check_unhealthy_threshold
+  health_check_timeout             = var.health_check_timeout
+  health_check_interval            = var.health_check_interval
 }
